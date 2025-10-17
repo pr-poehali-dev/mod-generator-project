@@ -60,11 +60,13 @@ CRITICAL RULES:
 4. Make the code compilable and functional
 5. Add detailed comments explaining the code
 6. Use proper Minecraft/Forge APIs for the requested version
+7. Include texture references and resource locations for custom items/blocks
 
 Package should be: com.generated.{mod_name.lower().replace(' ', '_').replace('-', '_')}
 Main class should be: {mod_name.replace(' ', '').replace('-', '')}Mod
 
-Generate fully working code that can be compiled into a JAR file."""
+Generate fully working code that can be compiled into a JAR file.
+Make sure to reference textures in assets folder following Minecraft conventions."""
 
     response = client.chat.completions.create(
         model='gpt-4',

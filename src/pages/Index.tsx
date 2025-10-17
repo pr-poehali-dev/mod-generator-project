@@ -22,13 +22,15 @@ interface GeneratedMod {
   version: string;
   minecraftVersion: string;
   timestamp: Date;
-  status: 'generating' | 'code_generated' | 'compiling' | 'ready' | 'error';
+  status: 'generating' | 'textures_generating' | 'code_generated' | 'compiling' | 'ready' | 'error';
   jarData?: string;
+  textureUrl?: string;
 }
 
 const API_GENERATE = 'https://functions.poehali.dev/d4065d07-bf9d-4767-826a-f62d6677604f';
 const API_COMPILE = 'https://functions.poehali.dev/e83fc933-1ba0-4643-831b-10d1fcbde988';
 const API_GET_MODS = 'https://functions.poehali.dev/d58d63d9-840a-4fae-b577-1bcbced38668';
+const API_GENERATE_TEXTURES = 'https://functions.poehali.dev/e46f46d8-1d76-4748-8a6b-6b6a14ea4da7';
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -84,7 +86,7 @@ const Index = () => {
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: 'Отлично! Начинаю генерацию мода через ИИ...\n\n🔄 Генерирую Java код с помощью GPT-4\n⚙️ Создаю структуру Forge мода\n📦 Компилирую в JAR файл',
+      content: 'Отлично! Начинаю генерацию мода через ИИ...\n\n🎨 Создаю текстуры через DALL-E 3\n🔄 Генерирую Java код с помощью GPT-4\n⚙️ Создаю структуру Forge мода\n📦 Компилирую в JAR файл',
       timestamp: new Date()
     };
     setMessages(prev => [...prev, assistantMessage]);
@@ -101,6 +103,35 @@ const Index = () => {
     setGeneratedMods(prev => [tempMod, ...prev]);
 
     try {
+      setGeneratedMods(prev =>
+        prev.map(mod =>
+          mod.id === tempMod.id ? { ...mod, status: 'textures_generating' as const } : mod
+        )
+      );
+
+      const textureResponse = await fetch(API_GENERATE_TEXTURES, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mod_id: tempMod.id,
+          description: userPrompt
+        })
+      });
+
+      let textureUrl = '';
+      if (textureResponse.ok) {
+        const textureData = await textureResponse.json();
+        textureUrl = textureData.texture_url || '';
+        
+        const textureMessage: Message = {
+          id: (Date.now() + 1.5).toString(),
+          role: 'assistant',
+          content: '🎨 Текстуры созданы! Начинаю генерацию кода...',
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, textureMessage]);
+      }
+
       const generateResponse = await fetch(API_GENERATE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -116,7 +147,7 @@ const Index = () => {
       if (generateData.mod_id) {
         setGeneratedMods(prev =>
           prev.map(mod =>
-            mod.id === tempMod.id ? { ...mod, id: generateData.mod_id, status: 'code_generated' as const } : mod
+            mod.id === tempMod.id ? { ...mod, id: generateData.mod_id, status: 'code_generated' as const, textureUrl } : mod
           )
         );
 
@@ -222,7 +253,14 @@ const Index = () => {
         return (
           <Badge variant="secondary" className="gap-1">
             <Icon name="Loader2" size={12} className="animate-spin" />
-            Генерация кода...
+            Генерация...
+          </Badge>
+        );
+      case 'textures_generating':
+        return (
+          <Badge variant="secondary" className="gap-1">
+            <Icon name="Palette" size={12} className="animate-pulse" />
+            Создаю текстуры...
           </Badge>
         );
       case 'code_generated':
@@ -416,6 +454,15 @@ const Index = () => {
                     className="p-6 bg-card/50 backdrop-blur-sm border-border hover:border-primary transition-all hover:shadow-lg hover:shadow-primary/20 animate-fade-in"
                   >
                     <div className="flex items-start justify-between gap-4">
+                      {mod.textureUrl && (
+                        <div className="w-16 h-16 flex-shrink-0">
+                          <img 
+                            src={mod.textureUrl} 
+                            alt={mod.name}
+                            className="w-full h-full object-cover rounded-lg border-2 border-primary/30"
+                          />
+                        </div>
+                      )}
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-lg font-medium">{mod.name}</h3>
@@ -424,7 +471,7 @@ const Index = () => {
                         <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
                           {mod.description}
                         </p>
-                        <div className="flex gap-4 text-xs text-muted-foreground">
+                        <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
                           <span className="flex items-center gap-1">
                             <Icon name="Tag" size={12} />
                             Версия {mod.version}
@@ -437,6 +484,12 @@ const Index = () => {
                             <Icon name="Calendar" size={12} />
                             {mod.timestamp.toLocaleDateString('ru-RU')}
                           </span>
+                          {mod.textureUrl && (
+                            <span className="flex items-center gap-1 text-primary">
+                              <Icon name="Palette" size={12} />
+                              С текстурами
+                            </span>
+                          )}
                         </div>
                       </div>
                       <Button
@@ -460,9 +513,9 @@ const Index = () => {
         <div className="container mx-auto px-6 text-center text-sm text-muted-foreground">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Icon name="Zap" size={16} />
-            <span>Powered by OpenAI GPT-4</span>
+            <span>Powered by OpenAI GPT-4 + DALL-E 3</span>
           </div>
-          <p>Поддержка всех популярных версий Minecraft • Генерация Java кода • Полная компиляция JAR</p>
+          <p>Генерация текстур через ИИ • Поддержка всех версий Minecraft • Генерация Java кода • Полная компиляция JAR</p>
         </div>
       </footer>
     </div>

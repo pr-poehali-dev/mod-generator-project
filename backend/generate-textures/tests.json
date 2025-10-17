@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Generate texture for mod",
+      "method": "POST",
+      "body": {
+        "mod_id": "mod_20250101_120000_test1234",
+        "description": "Diamond sword with flames"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "mod_id": "string",
+        "texture_url": "string",
+        "message": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
