@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "Generate simple mod",
+      "method": "POST",
+      "body": {
+        "prompt": "Add a diamond sword with extra damage",
+        "minecraft_version": "1.20.1",
+        "mod_name": "SuperSword"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "mod_id": "string",
+        "name": "string",
+        "status": "code_generated"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

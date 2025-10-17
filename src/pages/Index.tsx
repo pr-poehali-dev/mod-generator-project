@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -22,8 +22,13 @@ interface GeneratedMod {
   version: string;
   minecraftVersion: string;
   timestamp: Date;
-  status: 'generating' | 'ready' | 'error';
+  status: 'generating' | 'code_generated' | 'compiling' | 'ready' | 'error';
+  jarData?: string;
 }
+
+const API_GENERATE = 'https://functions.poehali.dev/d4065d07-bf9d-4767-826a-f62d6677604f';
+const API_COMPILE = 'https://functions.poehali.dev/e83fc933-1ba0-4643-831b-10d1fcbde988';
+const API_GET_MODS = 'https://functions.poehali.dev/d58d63d9-840a-4fae-b577-1bcbced38668';
 
 const Index = () => {
   const [messages, setMessages] = useState<Message[]>([
@@ -39,6 +44,28 @@ const Index = () => {
   const [generatedMods, setGeneratedMods] = useState<GeneratedMod[]>([]);
   const { toast } = useToast();
 
+  useEffect(() => {
+    loadMods();
+  }, []);
+
+  const loadMods = async () => {
+    const response = await fetch(API_GET_MODS);
+    const data = await response.json();
+    if (data.mods) {
+      const mods = data.mods.map((mod: any) => ({
+        id: mod.id,
+        name: mod.name,
+        description: mod.description,
+        version: mod.version,
+        minecraftVersion: mod.minecraftVersion,
+        timestamp: new Date(mod.timestamp),
+        status: mod.status,
+        jarData: mod.fileUrl
+      }));
+      setGeneratedMods(mods);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!input.trim()) return;
 
@@ -50,58 +77,185 @@ const Index = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const userPrompt = input;
     setInput('');
     setIsGenerating(true);
 
-    setTimeout(() => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Отлично! Начинаю генерацию мода. Это займёт несколько минут...\n\nСоздаю структуру мода, генерирую текстуры, пишу код логики, компилирую в JAR.',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+    const assistantMessage: Message = {
+      id: (Date.now() + 1).toString(),
+      role: 'assistant',
+      content: 'Отлично! Начинаю генерацию мода через ИИ...\n\n🔄 Генерирую Java код с помощью GPT-4\n⚙️ Создаю структуру Forge мода\n📦 Компилирую в JAR файл',
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, assistantMessage]);
 
-      const newMod: GeneratedMod = {
-        id: Date.now().toString(),
-        name: input.slice(0, 30),
-        description: input,
-        version: '1.0.0',
-        minecraftVersion: '1.20.1',
-        timestamp: new Date(),
-        status: 'generating'
-      };
-      setGeneratedMods(prev => [newMod, ...prev]);
+    const tempMod: GeneratedMod = {
+      id: 'temp_' + Date.now(),
+      name: userPrompt.slice(0, 30),
+      description: userPrompt,
+      version: '1.0.0',
+      minecraftVersion: '1.20.1',
+      timestamp: new Date(),
+      status: 'generating'
+    };
+    setGeneratedMods(prev => [tempMod, ...prev]);
 
-      setTimeout(() => {
+    try {
+      const generateResponse = await fetch(API_GENERATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: userPrompt,
+          minecraft_version: '1.20.1',
+          mod_name: userPrompt.slice(0, 30)
+        })
+      });
+
+      const generateData = await generateResponse.json();
+
+      if (generateData.mod_id) {
         setGeneratedMods(prev =>
           prev.map(mod =>
-            mod.id === newMod.id ? { ...mod, status: 'ready' as const } : mod
+            mod.id === tempMod.id ? { ...mod, id: generateData.mod_id, status: 'code_generated' as const } : mod
           )
         );
-        setIsGenerating(false);
-        
-        const completionMessage: Message = {
+
+        const codeMessage: Message = {
           id: (Date.now() + 2).toString(),
           role: 'assistant',
-          content: '✅ Мод готов! Можешь скачать его во вкладке "История".',
+          content: '✅ Код мода сгенерирован! Начинаю компиляцию в JAR...',
           timestamp: new Date()
         };
-        setMessages(prev => [...prev, completionMessage]);
+        setMessages(prev => [...prev, codeMessage]);
 
-        toast({
-          title: 'Мод готов!',
-          description: 'Твой мод успешно создан и готов к скачиванию.'
+        setGeneratedMods(prev =>
+          prev.map(mod =>
+            mod.id === generateData.mod_id ? { ...mod, status: 'compiling' as const } : mod
+          )
+        );
+
+        const compileResponse = await fetch(API_COMPILE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mod_id: generateData.mod_id })
         });
-      }, 3000);
-    }, 1000);
+
+        const compileData = await compileResponse.json();
+
+        if (compileData.status === 'ready') {
+          setGeneratedMods(prev =>
+            prev.map(mod =>
+              mod.id === generateData.mod_id
+                ? { ...mod, status: 'ready' as const, jarData: compileData.jar_data }
+                : mod
+            )
+          );
+
+          const completionMessage: Message = {
+            id: (Date.now() + 3).toString(),
+            role: 'assistant',
+            content: '🎉 Мод готов! JAR файл скомпилирован и готов к скачиванию. Переходи во вкладку "История".',
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, completionMessage]);
+
+          toast({
+            title: 'Мод готов!',
+            description: 'Твой мод успешно создан и готов к скачиванию.'
+          });
+        }
+      }
+    } catch (error) {
+      const errorMessage: Message = {
+        id: (Date.now() + 4).toString(),
+        role: 'assistant',
+        content: '❌ Произошла ошибка при генерации мода. Попробуй ещё раз или измени описание.',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+
+      setGeneratedMods(prev =>
+        prev.map(mod =>
+          mod.id === tempMod.id ? { ...mod, status: 'error' as const } : mod
+        )
+      );
+
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось создать мод. Попробуй ещё раз.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleDownload = (mod: GeneratedMod) => {
+    if (!mod.jarData) return;
+
+    const byteCharacters = atob(mod.jarData);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: 'application/java-archive' });
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${mod.name.replace(/\s+/g, '_')}.jar`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+
     toast({
       title: 'Скачивание началось',
       description: `${mod.name}.jar загружается...`
     });
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'generating':
+        return (
+          <Badge variant="secondary" className="gap-1">
+            <Icon name="Loader2" size={12} className="animate-spin" />
+            Генерация кода...
+          </Badge>
+        );
+      case 'code_generated':
+        return (
+          <Badge variant="secondary" className="gap-1">
+            <Icon name="Code2" size={12} />
+            Код готов
+          </Badge>
+        );
+      case 'compiling':
+        return (
+          <Badge variant="secondary" className="gap-1">
+            <Icon name="Loader2" size={12} className="animate-spin" />
+            Компиляция JAR...
+          </Badge>
+        );
+      case 'ready':
+        return (
+          <Badge className="gap-1 bg-green-500/20 text-green-400 border-green-500/30">
+            <Icon name="CheckCircle2" size={12} />
+            Готов
+          </Badge>
+        );
+      case 'error':
+        return (
+          <Badge variant="destructive" className="gap-1">
+            <Icon name="XCircle" size={12} />
+            Ошибка
+          </Badge>
+        );
+      default:
+        return null;
+    }
   };
 
   return (
@@ -211,16 +365,32 @@ const Index = () => {
               </div>
 
               <div className="flex gap-2 mt-4 flex-wrap">
-                <Badge variant="secondary" className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                  onClick={() => setInput('Добавь алмазный меч с двойным уроном')}
+                >
                   Новое оружие
                 </Badge>
-                <Badge variant="secondary" className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                  onClick={() => setInput('Создай магические блоки с эффектами зелий')}
+                >
                   Магические блоки
                 </Badge>
-                <Badge variant="secondary" className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                  onClick={() => setInput('Добавь нового враждебного моба с уникальными атаками')}
+                >
                   Новый моб
                 </Badge>
-                <Badge variant="secondary" className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                  onClick={() => setInput('Создай новое измерение с уникальными биомами')}
+                >
                   Измерение
                 </Badge>
               </div>
@@ -249,18 +419,7 @@ const Index = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-lg font-medium">{mod.name}</h3>
-                          {mod.status === 'generating' && (
-                            <Badge variant="secondary" className="gap-1">
-                              <Icon name="Loader2" size={12} className="animate-spin" />
-                              Генерация...
-                            </Badge>
-                          )}
-                          {mod.status === 'ready' && (
-                            <Badge className="gap-1 bg-green-500/20 text-green-400 border-green-500/30">
-                              <Icon name="CheckCircle2" size={12} />
-                              Готов
-                            </Badge>
-                          )}
+                          {getStatusBadge(mod.status)}
                         </div>
                         <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
                           {mod.description}
@@ -301,9 +460,9 @@ const Index = () => {
         <div className="container mx-auto px-6 text-center text-sm text-muted-foreground">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Icon name="Zap" size={16} />
-            <span>Powered by AI</span>
+            <span>Powered by OpenAI GPT-4</span>
           </div>
-          <p>Поддержка всех популярных версий Minecraft • Генерация текстур • Полная компиляция</p>
+          <p>Поддержка всех популярных версий Minecraft • Генерация Java кода • Полная компиляция JAR</p>
         </div>
       </footer>
     </div>

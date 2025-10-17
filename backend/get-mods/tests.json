@@ -1,0 +1,13 @@
+{
+  "tests": [
+    {
+      "name": "Get mods list",
+      "method": "GET",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "mods": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "tests": [
+    {
+      "name": "Compile mod",
+      "method": "POST",
+      "body": {
+        "mod_id": "mod_20250101_120000_test1234"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "mod_id": "string",
+        "status": "ready",
+        "download_url": "string"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
